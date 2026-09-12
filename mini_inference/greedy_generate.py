@@ -1,7 +1,7 @@
 """Runner + correctness harness for Day 1 naive greedy decoding.
 
-    uv run mini_inference/day01_greedy.py
-    uv run python -m mini_inference.day01_greedy
+    uv run mini_inference/greedy_generate.py
+    uv run python -m mini_inference.greedy_generate
 
 Runs YOUR ``generate_greedy`` and checks it token-for-token against
 ``model.generate(do_sample=False)``, which is the reference implementation for
@@ -32,9 +32,9 @@ import sys
 import time
 from pathlib import Path
 
-# `python mini_inference/day01_greedy.py` puts the SCRIPT'S DIRECTORY
+# `python mini_inference/greedy_generate.py` puts the SCRIPT'S DIRECTORY
 # (mini_inference/) on sys.path[0] -- not the repo root -- so the `mini_inference`
-# package itself is not importable. `python -m mini_inference.day01_greedy` puts
+# package itself is not importable. `python -m mini_inference.greedy_generate` puts
 # the cwd there instead, which is why only -m worked. This makes both work.
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
