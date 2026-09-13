@@ -10,36 +10,6 @@ import torch
 
 from mini_inference.sampling import sample_next_token
 
-def prefill(
-    input_ids: torch.Tensor,
-    model,
-    attention_mask: torch.Tensor | None = None,
-):
-    out = model(input_ids, attention_mask=attention_mask, use_cache=True)
-    cache = out.past_key_values
-    return out.logits[:, -1, :], cache
-
-
-def decode_step(
-    input_ids: torch.Tensor,
-    past_key_values,
-    attention_mask: torch.Tensor,
-    model,
-):
-    out = model(input_ids[:, -1:], attention_mask=attention_mask,
-                past_key_values=past_key_values, use_cache=True)
-    return out.logits[:, -1, :], out.past_key_values
-
-
-def decode_step_reference(
-    input_ids: torch.Tensor,
-    past_key_values,
-    attention_mask: torch.Tensor,
-    model,
-):
-    out = model(input_ids, attention_mask=attention_mask, use_cache=False)
-    return out.logits[:, -1, :], past_key_values
-
 
 def generate_cached(
     input_ids: torch.Tensor,
@@ -50,7 +20,6 @@ def generate_cached(
     temperature: float = 1.0,
     top_k: int | None = None,
     top_p: float | None = None,
-    debug_argmax: bool = True,
 ) -> torch.Tensor:
     device = input_ids.device
     batch_size, prompt_len = input_ids.shape
@@ -67,20 +36,18 @@ def generate_cached(
     finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
     with torch.no_grad():
-        logits, past_key_values = prefill(
-            input_ids, model, attention_mask if needs_mask else None
-        )
+
+        # Prefill the cache with the prompt
+        out = model(input_ids, attention_mask=attention_mask, use_cache=True)
+        logits, past_key_values = out.logits[:, -1, :], out.past_key_values
         cache_len = 0 if past_key_values is None else past_key_values.get_seq_length()
         print(f"  prefill: prompt T={prompt_len}, cache holds {cache_len}")
 
         for step in range(max_new_tokens):
-            if temperature <= 0.0:
-                pick = logits.float() if debug_argmax else logits
-                next_token = pick.argmax(dim=-1)                 # [B] int64
+            if temperature == 0.0:
+                next_token = torch.argmax(logits, dim=-1)
             else:
-                next_token = sample_next_token(
-                    logits, temperature=temperature, top_k=top_k, top_p=top_p
-                )                                                # [B] int64
+                next_token = sample_next_token(logits, temperature=temperature, top_k=top_k, top_p=top_p)
 
             stop_now = torch.zeros_like(finished)
             if eos_token_id is not None:
@@ -102,9 +69,9 @@ def generate_cached(
             if step == max_new_tokens - 1 or bool(finished.all()):
                 break
 
-            logits, past_key_values = decode_step(
-                input_ids, past_key_values, attention_mask, model
-            )
+            # Decode the next token using the cache
+            out = model(input_ids[:, -1:], attention_mask=attention_mask, past_key_values=past_key_values, use_cache=True)
+            logits, past_key_values = out.logits[:, -1, :], out.past_key_values
 
             if past_key_values is not None:
                 assert past_key_values.get_seq_length() == attention_mask.shape[1], (
@@ -121,4 +88,4 @@ def generate_cached(
     return input_ids
 
 
-__all__ = ["prefill", "decode_step", "decode_step_reference", "generate_cached"]
+__all__ = ["generate_cached"]

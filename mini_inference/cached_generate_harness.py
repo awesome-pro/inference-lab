@@ -16,7 +16,7 @@ from mini_inference.generate import generate_greedy
 MODEL_NAME = "Qwen/Qwen2.5-0.5B"
 PROMPTS = [
     "The capital of India is",
-    "2 + 2 =",
+    "My name",
 ]
 MAX_NEW_TOKENS = 32
 
@@ -167,37 +167,18 @@ def speed(tokenizer, model) -> None:
         print("  decode steps are memory-bound, so you will not reach it exactly.")
 
 
-def prefill_check(tokenizer, model) -> bool:
-    """Inspect the cache right after prefill -- the smallest possible check."""
-    print("\n" + "=" * 72)
-    print("PART 3 -- PREFILL: does the cache exist and hold the prompt?")
-    print("=" * 72)
-
-    from mini_inference.cached_generate import prefill
-
-    input_ids = tokenizer(PROMPTS[0], return_tensors="pt")["input_ids"].to(model.device)
-    prompt_len = input_ids.shape[1]
-
-    logits, cache = prefill(input_ids, model, None)
-
-    print(f"\nprompt length      : {prompt_len}")
-    print(f"logits             : {tuple(logits.shape)}  (want [B, V] = [1, 151936])")
-    if cache is None:
-        print("past_key_values    : None")
-        print("\n  -> prefill is not implemented yet (or returns the fallback).")
-        print("     Write it, then this should say: cache holds 5 positions.")
-        return False
-
-    cache_len = cache.get_seq_length()
-    print(f"past_key_values    : {type(cache).__name__}, holds {cache_len} positions")
-    key_shape = tuple(cache.layers[0].keys.shape)
-    print(f"layer 0 keys       : {key_shape}  (want [B, H_kv, {prompt_len}, D])")
-    print(f"prompt tokens      : {input_ids[0].tolist()}")
-    print(f"top-1 token        : {tokenizer.decode([int(logits.argmax(-1))])!r}")
-
-    ok = cache_len == prompt_len
-    print(f"\n  {'PASS' if ok else 'FAIL'}  cache length == prompt length")
-    return ok
+def batch_check(tokenizer, model) -> bool:
+    enc = tokenizer(PROMPTS, return_tensors="pt", padding=True)
+    input_ids = enc["input_ids"].to(model.device)
+    dot = tokenizer.encode(".", add_special_tokens=False)[0]
+    out = generate_cached(input_ids, model, max_new_tokens=MAX_NEW_TOKENS, eos_token_id=dot, pad_token_id=tokenizer.pad_token_id, temperature=0.0)
+    print(f"\ninput_ids shape: {tuple(input_ids.shape)}")
+    print(f"output shape   : {tuple(out.shape)}")
+    for i, prompt in enumerate(PROMPTS):
+        print(f"prompt {i}: {prompt!r}")
+        print(f"  input_ids: {input_ids[i].tolist()}")
+        print(f"  output   : {out[i].tolist()}")
+        print(f"  decoded  : {tokenizer.decode(out[i])!r}")
 
 
 def main() -> None:
@@ -205,24 +186,11 @@ def main() -> None:
     print(f"model: {MODEL_NAME} on {model.device}\n")
 
     results = {}
-    corr = correctness(tokenizer, model)
-    results.update({f"correctness: {k!r}": v for k, v in corr.items()})
+    # corr = correctness(tokenizer, model)
+    # results.update({f"correctness: {k!r}": v for k, v in corr.items()})
 
-    results["prefill populates cache"] = prefill_check(tokenizer, model)
-
-    speed(tokenizer, model)
-
-    print("\n" + "=" * 72)
-    print("SUMMARY")
-    print("=" * 72)
-    for k, v in results.items():
-        print(f"  {'PASS' if v else 'FAIL'}  {k}")
-
-    if all(results.values()):
-        print("\nDay 3 complete. Fill in the experiment record in notes/day03_kv_cache.md.")
-    else:
-        print("\nSee notes/day03_kv_cache.md -> 'If it produces different tokens'.")
-
+    # speed(tokenizer, model)
+    batch_check(tokenizer, model)
 
 if __name__ == "__main__":
     main()

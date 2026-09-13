@@ -7,9 +7,38 @@ five lines in every file.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import torch
 
 MODEL_NAME = "Qwen/Qwen2.5-0.5B"
+
+
+def load_env() -> None:
+    """Read ``.env`` at the repo root and set any keys not already in os.environ.
+
+    ``.env`` is only a text file -- nothing reads it automatically. Without
+    this, ``HF_TOKEN`` sits in the file while ``os.environ`` has no idea, and
+    every HF Hub request goes out unauthenticated.
+
+    Keys already present in the real environment win, so
+    ``HF_TOKEN=... uv run ...`` still overrides the file.
+    """
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip("'\"")
+        if key and value:
+            os.environ.setdefault(key, value)
+
+
+load_env()
 
 
 def load_model(device: str | None = None):
