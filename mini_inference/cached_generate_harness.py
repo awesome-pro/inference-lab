@@ -1,35 +1,3 @@
-"""Runner + correctness harness for Day 3 cached generation.
-
-    uv run mini_inference/cached_generate_harness.py
-    uv run python -m mini_inference.cached_generate_harness
-
-Checks YOUR ``generate_cached`` against ``generate_greedy`` (Day 1), which is
-the reference implementation. Same idea as the Day 1 harness: the slow version
-is the oracle, never the solution.
-
-Two things are checked, and they answer different questions.
-
-  PART 1 -- CORRECTNESS
-      Does cached generation produce the same tokens as naive generation?
-
-      This runs with the skeleton as shipped (which uses the slow uncached
-      reference path), so it PASSES before you write anything. That is
-      deliberate: it tells you the harness works, and it means any later FAIL
-      is caused by your change.
-
-  PART 2 -- SPEED
-      Does it actually avoid work?
-
-      Prints total time and per-call time for both paths. THIS is the number
-      that should change when you implement the two functions. If correctness
-      still passes but this number does not move, your decode step is not
-      actually using the cache.
-
-Run it after every edit. A correct-but-slow result means the cache is not being
-threaded through; a fast-but-wrong result means the mask or the input slice is
-inconsistent -- see notes/day03_kv_cache.md.
-"""
-
 from __future__ import annotations
 
 import sys
@@ -46,16 +14,10 @@ from mini_inference.cached_generate import generate_cached
 from mini_inference.generate import generate_greedy
 
 MODEL_NAME = "Qwen/Qwen2.5-0.5B"
-
-# Prompts used for the equivalence check. Mixing a factual prompt with an
-# open-ended one is intentional: they exercise different continuations.
 PROMPTS = [
     "The capital of India is",
     "2 + 2 =",
 ]
-
-# Generation length. Longer makes the speed gap more visible; 32 is enough to
-# be clearly uneven between the two paths without a slow test.
 MAX_NEW_TOKENS = 32
 
 

@@ -93,6 +93,36 @@ token as if the prefix never existed.
 
 ---
 
+## Known gap — carried into Day 5
+
+When a row finishes early, it keeps receiving pad tokens, and **those pad tokens
+keep getting cached**.
+
+Measured, 2 rows, `eos_token_id='.'`, `max_new_tokens=32`:
+
+```
+row 0: stopped at position 14  ->  cache grew to 37
+row 1: still generating        ->  cache grew to 37
+```
+
+23 cache slots per finished row, holding K/V for tokens that do not exist.
+
+Why it cannot be fixed by breaking the loop: `input_ids` is `[B, T]`, a
+rectangle. If row 1 is still generating, row 0 must supply *something* for every
+new column. Hence the pad filler.
+
+Why the existing invariant does not catch it: the assertion
+`cache.get_seq_length() == attention_mask.shape[1]` assumes every row's cache
+grows with the mask. The intuition "a stopped row should stop caching" is
+**incompatible** with that assertion. The invariant is a simplification that
+holds for `B=1` and for full batches, but not for mixed finish times.
+
+This is a batching problem. Deferred to Day 5 — it needs per-row bookkeeping
+that only makes sense once batching is introduced. Production solves it with
+block tables and slot reclaiming (PagedAttention).
+
+---
+
 ## Experiment
 
 **Question** — does a KV cache change the output, and how much work does it save?
