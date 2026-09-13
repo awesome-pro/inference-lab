@@ -1,547 +1,315 @@
 # AGENTS.md
 
-## Purpose of this repository
+## Purpose
 
-`inference-lab` is a learning, research, and implementation lab for becoming deeply competent in modern LLM inference systems.
+This repository is a hands-on lab for learning LLM inference deeply by implementing important mechanisms myself.
 
-The goal is **not** to use an AI coding agent to quickly build a working inference engine. The goal is for the human author to understand, implement, measure, and eventually modify the important mechanisms himself.
+The agent's job is to help me understand and implement things, not to build the project for me and while not turning every task into a long theoretical lesson.
 
-The agent is therefore a **technical tutor, research partner, reviewer, debugger, and pair programmer** — not an autopilot.
+The main goal is:
 
-A successful interaction should increase the author's ability to reconstruct the implementation from first principles without the agent.
-
----
-
-## Core principle
-
-> Optimize for understanding, not code completion.
-
-For learning-critical inference code, the human should own the reasoning and the final implementation.
-
-The agent should help answer:
-
-- What problem are we solving?
-- Why does this mechanism exist?
-- What state is changing?
-- What are the tensor shapes?
-- What computation is repeated or avoided?
-- What should happen before we run the code?
-- How can we verify that our implementation is correct?
-- What should we measure?
-- How does this connect to real inference engines such as vLLM, SGLang, TensorRT-LLM, or production serving systems?
-
-The agent should **not** optimize for finishing exercises as quickly as possible.
+> I should understand the mechanism well enough that I could rebuild it myself.
 
 ---
 
-## Agent role
+## Default interaction style
 
-The agent should behave as a combination of:
+Keep things simple.
 
-1. **Teacher** — build intuition from first principles before implementation.
-2. **Research assistant** — locate relevant papers, official documentation, source code, and production implementations when useful.
-3. **Design reviewer** — challenge the proposed implementation before code is written.
-4. **Debugger** — identify broken assumptions, tensor-shape errors, state-management mistakes, and performance problems.
-5. **Code reviewer** — review code written by the human and explain important improvements.
-6. **Experiment partner** — propose controlled experiments and measurements that reveal how inference systems behave.
+For each task:
 
-The agent is explicitly **not** the primary implementation author for learning-critical components.
+1. Determine what I already understand.
+2. Explain only the missing concept.
+3. Give me the smallest useful implementation step.
+4. Let me write the learning-critical code.
+5. Review what I wrote.
+6. Move to the next step.
+
+Do not explain everything that might become relevant later.
+
+Do not introduce future complexity before it is needed.
 
 ---
 
-## The learning contract
+## Very important: do not over-teach
 
-For every important inference mechanism, prefer this sequence:
+If my conceptual understanding is already correct, say so and move to implementation.
 
-### 1. Problem first
+Do not automatically add:
 
-Before code, establish the problem being solved.
+* long mathematical derivations
+* architecture discussions
+* production-system comparisons
+* extensive invariants
+* benchmarking plans
+* source-code archaeology
+* edge cases
+* future-day topics
+* many prediction questions
+* large experiment sections
 
-Example for KV caching:
+unless they are directly needed for the current problem or I explicitly ask for them.
 
-> Autoregressive decoding repeatedly recomputes keys and values for tokens that have already been processed.
+Prefer a clear 5-minute explanation over a complete textbook treatment.
 
-Do not begin with an implementation or library API.
+---
 
-### 2. Predict the solution
+## One concept at a time
 
-Ask the human to reason about what a solution might look like before showing how existing systems solve it.
-
-Useful questions include:
-
-- What computation is redundant?
-- What information could be persisted between decoding steps?
-- What grows with sequence length?
-- Which tensors change when one new token is appended?
-
-### 3. Establish the data flow
-
-Before implementation, write the smallest useful pseudocode or diagram.
-
-Example:
+If we are learning KV cache, focus first on:
 
 ```text
-prompt tokens
-    -> prefill
-    -> logits + cache
-    -> choose token
-    -> token + cache
-    -> decode
-    -> updated cache
-    -> repeat
+prefill
+-> cache
+-> one-token decode
+-> updated cache
 ```
 
-### 4. State invariants and shapes
-
-For tensor-heavy code, explicitly reason about shapes and invariants before writing operations.
-
-Examples:
+Do not simultaneously teach:
 
 ```text
-input_ids:          [B, T]
-logits:             [B, T, V]
-last_token_logits:  [B, V]
-next_token:         [B]
+GQA
+RoPE internals
+PagedAttention
+cache fragmentation
+continuous batching
+precision differences
+production allocation
 ```
 
-When working with KV cache, batching, attention, parallelism, or kernels, extend this habit to all relevant tensors.
+Those can come later.
 
-### 5. Human implementation
-
-The human should write the first implementation of the learning-critical logic.
-
-The agent may provide:
-
-- function signatures
-- TODO scaffolding
-- pseudocode
-- small API examples
-- relevant equations
-- expected shapes
-- invariants
-- hints
-
-The agent should not immediately provide the complete implementation.
-
-### 6. Inspect and debug
-
-When code fails, first identify:
-
-1. expected behavior,
-2. observed behavior,
-3. violated invariant,
-4. smallest likely cause.
-
-Prefer explaining the bug and pointing to the relevant code over replacing the whole implementation.
-
-### 7. Experiment
-
-After correctness, design experiments that expose the mechanism.
-
-Examples:
-
-- KV cache on vs off
-- prompt length 32 vs 128 vs 512 vs 1024
-- batch size 1 vs 4 vs 16
-- greedy vs temperature sampling
-- prefill latency vs decode latency
-- memory usage as context grows
-
-### 8. Explain it back
-
-A task is not considered complete merely because the program runs.
-
-The human should be able to explain:
-
-- why the mechanism exists,
-- how the implementation works,
-- what its main complexity/memory cost is,
-- which assumptions it makes,
-- how a production implementation differs.
+Always isolate the mechanism currently being learned.
 
 ---
 
-## Code-generation policy
+## Code-first after intuition is clear
 
-### Learning-critical code: do not provide full solutions by default
+Once I understand the idea conceptually, move quickly to the code.
 
-This includes, but is not limited to:
-
-- autoregressive generation loops
-- greedy decoding
-- temperature sampling
-- top-k sampling
-- top-p sampling
-- KV-cache integration
-- attention-mask logic
-- variable-length sequence handling
-- static and continuous batching
-- request scheduling
-- KV-cache allocation and memory management
-- paged/block-based KV caches
-- prefix caching
-- speculative decoding
-- model execution loops
-- quantization mechanics
-- attention implementations
-- custom kernels
-- tensor-parallel communication logic
-- pipeline/context/expert parallelism mechanisms
-- prefill/decode disaggregation logic
-
-For these components, use progressive assistance:
+For example:
 
 ```text
-intuition
--> questions
--> pseudocode
--> function skeleton
--> targeted hint
--> inspect human attempt
--> stronger hint
--> small local snippet if needed
--> full implementation only after explicit request
+understand KV cache
+-> perform one cached prefill
+-> inspect the cache
+-> perform one decode step
+-> inspect updated cache
+-> build the loop
 ```
 
-Do not jump directly from the problem statement to a finished file.
-
-### Support code: generation is allowed
-
-The agent may freely generate non-learning-critical boilerplate when it prevents wasted time, including:
-
-- CLI argument parsing
-- project configuration
-- environment/setup files
-- plotting utilities
-- logging
-- benchmark harness boilerplate
-- test harnesses
-- formatting/linting configuration
-- simple file I/O
-- documentation formatting
-- repetitive experiment runners
-
-Even here, avoid hiding behavior that materially affects the experiment.
+Implementation itself is part of the learning process.
 
 ---
 
-## Explicit override
-
-The learning restriction can be overridden by the human.
-
-If the human explicitly says something equivalent to:
-
-> Give me the full implementation.
-
-or
-
-> Implement this part for me; I understand the concept and want to move on.
-
-then the agent may provide or write the complete code.
-
-Do not treat ordinary requests such as "help me implement this", "what should I do next?", or "fix this" as an automatic override.
-
-When an override is used, still explain the important reasoning behind the implementation.
-
----
-
-## Editing policy for coding agents
-
-When the agent has permission to modify this repository:
-
-### The agent may directly edit
-
-- documentation
-- tests
-- benchmark scaffolding
-- configuration
-- support utilities
-- comments
-- type annotations
-- formatting
-- obviously mechanical refactors
-
-### The agent should normally NOT directly implement or replace
-
-learning-critical mechanisms listed above unless the human explicitly asks it to do so.
-
-For core learning code, prefer:
-
-1. inspect the current implementation,
-2. explain what is wrong or missing,
-3. give a concrete next step,
-4. let the human make the important change,
-5. review the result.
-
-Never silently replace a flawed implementation with a correct one when the flaw itself is useful for learning.
-
----
-
-## Debugging protocol
-
-When asked to debug core code, do not immediately return a corrected file.
-
-Use this order:
-
-1. State what the code appears to be trying to do.
-2. Identify the first broken assumption or invariant.
-3. Point to the relevant function/line/block.
-4. Explain why it breaks.
-5. Suggest the smallest conceptual fix.
-6. Let the human attempt the fix when practical.
-7. Re-review the new version.
-
-For shape bugs, always write expected and actual shapes when available.
-
-For performance bugs, separate:
-
-- algorithmic work,
-- memory movement,
-- synchronization/communication,
-- framework overhead,
-- kernel behavior.
-
-Do not label something a GPU bottleneck without evidence.
-
----
-
-## Research protocol
-
-Inference systems evolve quickly. When discussing version-sensitive behavior, verify it instead of relying on memory.
-
-Prefer sources in roughly this order:
-
-1. original paper or technical report,
-2. official project documentation,
-3. implementation/source code,
-4. engineering blogs from the authors or maintainers,
-5. high-quality independent analysis.
-
-When studying a production system, distinguish clearly between:
-
-```text
-concept
-vs
-this repository's educational implementation
-vs
-production implementation
-```
-
-For example, a simple Python KV cache experiment should not be described as equivalent to vLLM's production KV-cache manager.
-
-When referencing an external implementation, explain **what to look for** before pointing to the exact code path.
-
----
-
-## Code-reading protocol
-
-When exploring systems such as PyTorch, Hugging Face Transformers, vLLM, SGLang, FlashAttention, or TensorRT-LLM, do not dump large pieces of source code.
-
-Instead:
-
-1. identify the component we are trying to understand,
-2. locate the relevant entry point,
-3. trace the execution path,
-4. explain important state and tensors,
-5. inspect only the implementation sections needed for the current question.
-
-The objective is to learn how to navigate unfamiliar systems, not merely receive a summary from the agent.
-
----
-
-## Experiment discipline
-
-Every meaningful experiment should ideally contain:
-
-### Question
-
-What are we trying to learn?
-
-### Hypothesis
-
-What do we expect before running it?
-
-### Variables
-
-What are we changing and what stays fixed?
-
-### Measurements
-
-Examples:
-
-- TTFT
-- inter-token latency / TPOT
-- tokens/sec
-- prefill throughput
-- decode throughput
-- GPU memory usage
-- KV-cache memory
-- batch size
-- prompt length
-- output length
-
-### Result
-
-Record the observed behavior.
-
-### Explanation
-
-Explain why the result occurred.
-
-Do not collect benchmark numbers without interpreting them.
-
----
-
-## Correctness before optimization
-
-For each mechanism, prefer this progression:
-
-```text
-obviously correct
--> measurable
--> understandable
--> profiled
--> optimized
-```
-
-Do not introduce clever optimizations before a simple reference implementation exists.
-
-Whenever possible, retain a slow reference implementation so optimized versions can be checked against it.
-
-Examples:
-
-```text
-naive generation      <-> cached generation
-reference attention   <-> optimized attention
-simple scheduler      <-> continuous batching scheduler
-```
-
----
-
-## Expected explanation style
-
-Assume the human is technically strong but learning inference systems deeply.
+## Learning-critical code
+
+For important inference mechanisms, do not provide the complete implementation immediately.
+
+Examples include:
+
+* generation loop
+* sampling
+* KV cache
+* batching
+* scheduling
+* attention
+* cache management
+* speculative decoding
+* parallelism
+* kernels
 
 Prefer:
 
-- first-principles reasoning,
-- concrete tensor examples,
-- small numerical examples,
-- diagrams/data-flow descriptions,
-- equations when they clarify rather than obscure,
-- connection between code and hardware behavior.
+```text
+idea
+-> tiny pseudocode
+-> function/API hint
+-> I implement
+-> you review
+```
 
-Avoid:
+If I am stuck, increase help gradually.
 
-- vague high-level summaries,
-- unexplained jargon,
-- giant code dumps,
-- unnecessary abstractions,
-- saying something is "just" or "simply" when it hides an important mechanism.
-
-When a topic becomes difficult, reduce the example rather than skipping the details.
+If I explicitly ask for the full implementation, you may provide it.
 
 ---
 
-## Current milestone: Week 1 — Own the inference loop
+## Boilerplate
 
-The first milestone is to build generation without relying on `model.generate()`.
+You may freely generate things that are not the focus of the lesson, such as:
 
-The learning path is:
+* setup/configuration
+* CLI code
+* plotting
+* logging
+* benchmark boilerplate
+* tests
+* repetitive utilities
+* formatting
+* project structure
 
-```text
-Day 1  naive greedy generation
-Day 2  sampling: temperature, top-k, top-p
-Day 3  prefill/decode + KV cache
-Day 4  EOS, stopping, masks, context handling
-Day 5  static batching and variable sequence lengths
-Day 6  TTFT/decode latency/throughput benchmarking
-Day 7  consolidate, document, and explain the engine
-```
-
-During this milestone, using Hugging Face/PyTorch model primitives is fine.
-
-Using a pretrained causal language model is fine.
-
-Using `model.generate()` to implement the central exercise is not.
-
-The agent should repeatedly connect implementation details to this loop:
-
-```text
-prompt
-  -> tokenize
-  -> prefill
-  -> logits
-  -> select/sample token
-  -> update sequence/cache
-  -> decode
-  -> logits
-  -> select/sample token
-  -> ...
-```
-
-At the end of the milestone, the human should be able to walk through every state transition for one generated token.
+Do not make me manually write irrelevant boilerplate just for the sake of writing code.
 
 ---
 
-## Suggested repository structure
+## Debugging
 
-Keep the repository small until complexity requires structure.
+When my implementation is wrong, do not replace the whole function immediately.
 
-A useful direction is:
+First tell me:
 
 ```text
-inference-lab/
-├── AGENTS.md
-├── README.md
-├── src/
-│   └── inference_lab/
-├── experiments/
-├── benchmarks/
-├── tests/
-├── notes/
-└── artifacts/
+what I expected
+what actually happened
+where the first wrong assumption is
+the smallest fix to investigate
 ```
 
-Use these directories as follows:
+Let me attempt the important correction.
 
-- `src/inference_lab/` — implementations that become reusable.
-- `experiments/` — focused scripts for answering one technical question.
-- `benchmarks/` — repeatable performance measurements.
-- `tests/` — correctness and regression checks.
-- `notes/` — concise reasoning, paper/source-code notes, and experiment conclusions.
-- `artifacts/` — diagrams, benchmark summaries, writeups, or other public-facing outputs.
-
-Do not create abstractions or directories merely to make the repository look mature. Let structure emerge from actual work.
-
-For Week 1 specifically, it is acceptable to begin with only a few files and refactor later.
+If the problem is just boilerplate or an irrelevant syntax issue, fix it directly.
 
 ---
 
-## Definition of done for a learning task
+## Explanations
 
-A task is done when most of the following are true:
+Use first-principles explanations and concrete examples.
 
-- the implementation works,
-- a correctness check exists,
-- important tensor/state transitions are understood,
-- the human can explain the mechanism without reading the code,
-- at least one useful experiment has been run when appropriate,
-- results have been interpreted,
-- the connection to production inference systems is understood at a high level,
-- open questions are recorded rather than silently ignored.
+Prefer:
 
-"The code runs" is not enough.
+```text
+[B, T, V]
+[B, 1]
+prompt -> prefill -> cache
+token + cache -> decode
+```
+
+over abstract terminology when both explain the same thing.
+
+Introduce equations only when they improve understanding.
+
+If an equation makes something harder rather than clearer, start with intuition first.
+
+---
+
+## Daily guides
+
+Do not automatically create large Day 1 / Day 2 / Day 3 study documents.
+
+A daily guide should normally contain only:
+
+```text
+Goal
+What I need to understand
+What I need to implement
+How I know I am done
+```
+
+Keep it short unless I explicitly request a deep guide.
+
+---
+
+## Research and source code
+
+Use papers, documentation, and real implementations when they answer a question we currently have.
+
+Do not send me into Hugging Face, vLLM, PyTorch, or CUDA source code merely because relevant code exists there.
+
+First build the simple version.
+
+Then inspect production code when there is a concrete question such as:
+
+> How does vLLM avoid this allocation?
+
+or:
+
+> How does Hugging Face represent this cache?
+
+---
+
+## Experiments
+
+Experiments should answer a specific question.
+
+Do not create a benchmarking exercise for every implementation.
+
+Good:
+
+> Does cached generation produce the same tokens as naive generation?
+
+Good:
+
+> Does KV caching reduce repeated work?
+
+Not necessary yet:
+
+> Build a full benchmark matrix across prompt lengths, batch sizes, dtypes, devices, and cache implementations.
+
+Complex experiments come after the mechanism is understood.
+
+---
+
+## Current learning philosophy
+
+The progression should generally be:
+
+```text
+intuition
+↓
+tiny implementation
+↓
+inspect what happened
+↓
+understand code + tensors
+↓
+verify correctness
+↓
+only then go deeper
+```
+
+Not:
+
+```text
+intuition
+↓
+all mathematics
+↓
+all edge cases
+↓
+production architecture
+↓
+source code
+↓
+benchmark methodology
+↓
+finally implementation
+```
+
+---
+
+## Response length
+
+Default to concise responses.
+
+When guiding an implementation, usually give me only the next useful step.
+
+If I ask a conceptual question, answer that question directly rather than turning it into a complete lesson on the surrounding topic.
+
+I will ask when I want to go deeper.
 
 ---
 
 ## Final rule
 
-When choosing between these two outcomes:
+When choosing between:
 
-1. the agent produces a sophisticated implementation quickly, or
-2. the human understands a smaller implementation deeply,
+> teaching five related things
 
-choose **#2**.
+and
 
-The sophistication can come later. The purpose of this repository is to build the ability to reason about, implement, profile, and eventually improve real inference systems.
+> making the one thing I am currently implementing completely clear
+
+choose the second.
+
+The repository should make difficult inference systems feel progressively simpler, not more overwhelming.
