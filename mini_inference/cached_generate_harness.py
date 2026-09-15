@@ -15,10 +15,10 @@ from mini_inference.generate import generate_greedy
 
 MODEL_NAME = "Qwen/Qwen2.5-0.5B"
 PROMPTS = [
-    "The capital of India is",
-    "My name",
+    "The capital of India is New",
+    "The future of Artifical Intelligenece is",
 ]
-MAX_NEW_TOKENS = 32
+MAX_NEW_TOKENS = 10
 
 
 def load_model() -> tuple[AutoTokenizer, AutoModelForCausalLM]:
@@ -186,11 +186,9 @@ def main() -> None:
     print(f"model: {MODEL_NAME} on {model.device}\n")
 
     results = {}
-    # corr = correctness(tokenizer, model)
-    # results.update({f"correctness: {k!r}": v for k, v in corr.items()})
+    corr = correctness(tokenizer, model)
+    results.update({f"correctness: {k!r}": v for k, v in corr.items()})
 
-    # speed(tokenizer, model)
-    batch_check(tokenizer, model)
 
 if __name__ == "__main__":
     main()

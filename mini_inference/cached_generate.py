@@ -7,7 +7,6 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
-
 from mini_inference.sampling import sample_next_token
 
 
@@ -22,7 +21,7 @@ def generate_cached(
     top_p: float | None = None,
 ) -> torch.Tensor:
     device = input_ids.device
-    batch_size, prompt_len = input_ids.shape
+    batch_size = input_ids.shape[0]
 
     if pad_token_id is None:
         pad_token_id = getattr(getattr(model, "config", None), "pad_token_id", None)
@@ -31,23 +30,20 @@ def generate_cached(
     if needs_mask:
         attention_mask = (input_ids != pad_token_id).long()
     else:
-        attention_mask = torch.ones_like(input_ids)
+        attention_mask = torch.ones_like(input=input_ids)
 
     finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
     with torch.no_grad():
-
-        # Prefill the cache with the prompt
+        # Prefill
         out = model(input_ids, attention_mask=attention_mask, use_cache=True)
         logits, past_key_values = out.logits[:, -1, :], out.past_key_values
-        cache_len = 0 if past_key_values is None else past_key_values.get_seq_length()
-        print(f"  prefill: prompt T={prompt_len}, cache holds {cache_len}")
 
         for step in range(max_new_tokens):
             if temperature == 0.0:
                 next_token = torch.argmax(logits, dim=-1)
             else:
-                next_token = sample_next_token(logits, temperature=temperature, top_k=top_k, top_p=top_p)
+                next_token = sample_next_token(logits=logits, temperature=temperature, top_k=top_k, top_p=top_p)
 
             stop_now = torch.zeros_like(finished)
             if eos_token_id is not None:
@@ -62,14 +58,13 @@ def generate_cached(
 
             input_ids = torch.cat([input_ids, next_token.unsqueeze(-1)], dim=-1)
 
-            new_col = (~already_done).long().unsqueeze(-1) if pad_token_id is not None \
-                else torch.ones((batch_size, 1), dtype=attention_mask.dtype, device=device)
+            new_col = (~already_done).long().unsqueeze(-1) if pad_token_id is not None else torch.ones((batch_size, 1), dtype=attention_mask.dtype, device=device)
             attention_mask = torch.cat([attention_mask, new_col], dim=-1)
 
             if step == max_new_tokens - 1 or bool(finished.all()):
                 break
 
-            # Decode the next token using the cache
+            # Decode
             out = model(input_ids[:, -1:], attention_mask=attention_mask, past_key_values=past_key_values, use_cache=True)
             logits, past_key_values = out.logits[:, -1, :], out.past_key_values
 
