@@ -9,3 +9,13 @@ dependencies = [
     "torch>=2.14.0",
     "transformers>=5.17.0",
 ]
+
+# Makes this repo an installable package, so `mini_inference` can be imported
+# no matter which file you run with `uv run`.
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "mini_inference"
+module-root = ""

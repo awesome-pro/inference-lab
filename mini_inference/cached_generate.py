@@ -1,13 +1,4 @@
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-if __package__ in (None, ""):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 import torch
-from mini_inference.sampling import sample_next_token
 
 
 def generate_cached(
@@ -15,72 +6,43 @@ def generate_cached(
     model,
     max_new_tokens: int,
     eos_token_id: int | None = None,
-    pad_token_id: int | None = None,
-    temperature: float = 1.0,
-    top_k: int | None = None,
-    top_p: float | None = None,
 ) -> torch.Tensor:
-    device = input_ids.device
-    batch_size = input_ids.shape[0]
-
-    if pad_token_id is None:
-        pad_token_id = getattr(getattr(model, "config", None), "pad_token_id", None)
-
-    needs_mask = pad_token_id is not None and bool((input_ids == pad_token_id).any())
-    if needs_mask:
-        attention_mask = (input_ids != pad_token_id).long()
-    else:
-        attention_mask = torch.ones_like(input=input_ids)
-
-    finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
-
     with torch.no_grad():
         # Prefill
-        out = model(input_ids, attention_mask=attention_mask, use_cache=True)
-        logits, past_key_values = out.logits[:, -1, :], out.past_key_values
+        out = model(input_ids, use_cache=True)
+        last_logits, cache = out.logits[:, -1, :], out.past_key_values
 
         for step in range(max_new_tokens):
-            if temperature == 0.0:
-                next_token = torch.argmax(logits, dim=-1)
-            else:
-                next_token = sample_next_token(logits=logits, temperature=temperature, top_k=top_k, top_p=top_p)
 
-            stop_now = torch.zeros_like(finished)
-            if eos_token_id is not None:
-                stop_now = (next_token == eos_token_id) & ~finished
-                finished = finished | stop_now
+            # 1. Select the next token 
+            next_token = torch.argmax(
+                last_logits, 
+                dim=-1
+            ) #[B]
 
-            if pad_token_id is not None:
-                already_done = finished & ~stop_now
-                next_token = torch.where(
-                    already_done, torch.full_like(next_token, pad_token_id), next_token
-                )
+            input_ids = torch.cat(
+                [
+                    input_ids,
+                    next_token.unsqueeze(-1)
+                ],
+                dim=-1
+            )
 
-            input_ids = torch.cat([input_ids, next_token.unsqueeze(-1)], dim=-1)
+            if(
+                eos_token_id is not None and next_token.item() == eos_token_id
+            ):
+                break
 
-            new_col = (~already_done).long().unsqueeze(-1) if pad_token_id is not None else torch.ones((batch_size, 1), dtype=attention_mask.dtype, device=device)
-            attention_mask = torch.cat([attention_mask, new_col], dim=-1)
-
-            if step == max_new_tokens - 1 or bool(finished.all()):
+            if (step == max_new_tokens - 1):
                 break
 
             # Decode
-            out = model(input_ids[:, -1:], attention_mask=attention_mask, past_key_values=past_key_values, use_cache=True)
-            logits, past_key_values = out.logits[:, -1, :], out.past_key_values
+            out = model(
+                next_token.unsqueeze(-1),  #[B, 1]
+                past_key_values=cache,
+                use_cache=True
+            )
+            last_logits = out.logits[:, -1, :]
+            cache = out.past_key_values
 
-            if past_key_values is not None:
-                assert past_key_values.get_seq_length() == attention_mask.shape[1], (
-                    f"cache/mask desync at step {step}: "
-                    f"cache={past_key_values.get_seq_length()} "
-                    f"mask={attention_mask.shape[1]}"
-                )
-
-            if bool(stop_now.all()):
-                input_ids = input_ids[:, :-1]
-                attention_mask = attention_mask[:, :-1]
-                break
-
-    return input_ids
-
-
-__all__ = ["generate_cached"]
+        return input_ids
