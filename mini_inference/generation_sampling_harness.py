@@ -27,7 +27,7 @@ def load_model(device):
 
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=dtype,
+        dtype=dtype,
     )
 
     model = model.to(device)
