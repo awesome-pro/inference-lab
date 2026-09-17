@@ -1,4 +1,11 @@
 import torch
+import time
+
+def sync_device(device):
+    if device.type == "mps":
+        torch.mps.synchronize()
+    elif device.type == "cuda":
+        torch.cuda.synchronize(device)
 
 
 def generate_batched(
@@ -25,6 +32,14 @@ def generate_batched(
         the caller is allowed to show the user.
     """
     with torch.no_grad():
+
+        device = input_ids.device
+
+        sync_device(device)
+        generation_start = time.perf_counter()
+
+        token_times = []
+
 
         # Prefill
         out = model(input_ids, attention_mask=attention_mask, use_cache=True)
@@ -66,6 +81,9 @@ def generate_batched(
 
                 # [B, 1] -> [B] so every tensor below keeps the same batch shape.
                 next_token = torch.multinomial(probs, num_samples=1).squeeze(-1)
+
+            sync_device(device=device)
+            token_times.append(time.perf_counter())
 
             active_before = ~finished
             stop_now = (
@@ -112,5 +130,19 @@ def generate_batched(
 
             last_logits = out.logits[:, -1, :]
             cache = out.past_key_values
+
+        ttft =  (token_times[0] - generation_start)
+        itls = [
+            (token_times[i] - token_times[i-1]) * 1000
+            for i in range(1, len(token_times))
+        ]
+
+        tpot = (
+            (sum(itls) / len(itls)) if itls else None
+        )
+
+        print("TTFT: ", ttft * 1000)
+        print("ITLs ", itls)
+        print("TPOT: ", tpot * 1000 if tpot else None)
 
     return input_ids, generated_lengths
