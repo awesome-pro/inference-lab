@@ -4,8 +4,8 @@
 
 Both policies run the identical engine, runner and requests; only the
 Scheduler admission rule differs (static=True/False). The point is to measure
-what static batching costs: steps spent and, more concretely, slot-steps that
-were paid for but left empty while requests were queued.
+what static batching costs: wall-clock, and more concretely the slot-steps that
+were paid for but left empty while arrived requests sat in the queue.
 
 Not learning-critical: this is measurement plumbing around your scheduler.
 """
@@ -15,16 +15,16 @@ import io
 
 from engine import Engine, Request, Runner, Scheduler
 
-# (id, prompt_len, max_new_tokens) -- everything arrives at step 0.
-# The two 14-token requests are what expose static batching: one long request
-# keeps the whole batch (and its slots) held hostage.
+# (id, prompt_len, max_new_tokens, arrival_time). Staggered arrivals: the two
+# long requests land later, so the queue is sometimes empty (nothing to admit,
+# which is not waste) and sometimes backed up (which is).
 WORKLOAD = [
-    ("r0", 4, 2),
-    ("r1", 4, 2),
-    ("r2", 4, 14),
-    ("r3", 4, 2),
-    ("r4", 4, 2),
-    ("r5", 4, 14),
+    ("r0", 4, 2, 0.0),
+    ("r1", 4, 2, 0.0),
+    ("r2", 4, 14, 0.0),
+    ("r3", 4, 2, 3.0),
+    ("r4", 4, 2, 4.5),
+    ("r5", 4, 14, 6.0),
 ]
 
 MAX_RUNNING = 3
@@ -35,44 +35,50 @@ def simulate(static, workload, max_running):
     scheduler = Scheduler(max_running_requests=max_running, static=static)
     engine = Engine(scheduler, Runner())
 
-    for req_id, prompt_len, max_new in workload:
-        engine.submit(Request(req_id, list(range(prompt_len)), 0.0, max_new))
+    for req_id, prompt_len, max_new, arrival in workload:
+        engine.submit(Request(req_id, list(range(prompt_len)), arrival, max_new))
 
-    # Runner prints one line per unit of work; we want them out of the way
-    # while collecting numbers. The demo script is where you watch them.
+    # Runner prints one line per unit of work; keep them out of the numbers.
+    # The demo script is where you watch them.
     with contextlib.redirect_stdout(io.StringIO()):
         occupancy = []      # (busy slots, wasted slots) per step
-        finish_step = {}
+        finish_time = {}
         retired_so_far = 0
 
         while scheduler.has_work():
+            step_time = engine.now
             engine.step()
-            engine.now += 1
 
             retired_now = len(scheduler.finished) - retired_so_far
             retired_so_far = len(scheduler.finished)
             for req in scheduler.finished:
-                finish_step.setdefault(req.id, engine.now)
+                finish_time.setdefault(req.id, engine.now)
 
             # A request that finished during this step still occupied its slot
             # for the whole step, so count it as busy.
             busy = len(scheduler.running) + retired_now
-            queued = bool(scheduler.waiting)
+
+            # Waste is a slot sitting empty while an *arrived* request is
+            # queued. A request that has not arrived yet is not work you could
+            # have done, so idle slots while it is still pending are not waste.
+            queued = any(r.arrival_time <= step_time for r in scheduler.waiting)
             wasted = (max_running - busy) if queued else 0
+
             occupancy.append((busy, wasted))
 
     return {
-        "total_steps": engine.now,
+        "steps": engine.now,
+        "makespan": max(finish_time.values()),
         "busy_slot_steps": sum(busy for busy, _ in occupancy),
         "wasted_slot_steps": sum(wasted for _, wasted in occupancy),
-        "finish_step": finish_step,
+        "finish_time": finish_time,
         "occupancy": occupancy,
         "scheduler": scheduler,
     }
 
 
 def occupancy_line(occupancy, max_running):
-    """3 chars per step: '#' busy, '.' idle while queued, '-' idle and empty."""
+    """3 chars per step: '#' busy, '.' idle while work was queued, '-' otherwise."""
     chars = []
     for busy, wasted in occupancy:
         chars.append("#" * busy)
@@ -86,35 +92,39 @@ def main():
         "static": simulate(True, WORKLOAD, MAX_RUNNING),
     }
 
-    print(f"workload: {len(WORKLOAD)} requests, max_running = {MAX_RUNNING}, "
-          f"all arriving at step 0")
-    for req_id, prompt_len, max_new in WORKLOAD:
-        print(f"  {req_id}  prompt={prompt_len:<3} max_new_tokens={max_new}")
+    print(f"workload: {len(WORKLOAD)} requests, max_running = {MAX_RUNNING}")
+    for req_id, prompt_len, max_new, arrival in WORKLOAD:
+        print(f"  {req_id}  prompt={prompt_len:<3} max_new_tokens={max_new:<3} "
+              f"arrives at t={arrival}")
     print()
 
-    header = f"{'policy':<12}{'total steps':>13}{'busy slot-steps':>18}{'wasted slot-steps':>20}"
+    header = (f"{'policy':<12}{'steps':>7}{'makespan':>10}{'busy slot-steps':>18}"
+              f"{'wasted slot-steps':>20}")
     print(header)
     print("-" * len(header))
     for name, r in results.items():
-        print(f"{name:<12}{r['total_steps']:>13}{r['busy_slot_steps']:>18}"
-              f"{r['wasted_slot_steps']:>20}")
+        print(f"{name:<12}{r['steps']:>7}{r['makespan']:>10}"
+              f"{r['busy_slot_steps']:>18}{r['wasted_slot_steps']:>20}")
     print()
 
-    print(f"slot occupancy ({MAX_RUNNING} chars per step)")
+    print(f"slot occupancy ({MAX_RUNNING} chars per step, one step per time unit)")
     print("  # busy   . idle while requests were queued   - idle, nothing queued")
     for name, r in results.items():
         print(f"  {name:<11} {occupancy_line(r['occupancy'], MAX_RUNNING)}")
     print()
 
-    print("finish step per request (all arrive at 0, so this is also latency)")
-    print(f"  {'id':<6}{'continuous':>12}{'static':>9}{'added':>8}")
-    for req_id, _, _ in WORKLOAD:
-        cont = results["continuous"]["finish_step"][req_id]
-        stat = results["static"]["finish_step"][req_id]
-        print(f"  {req_id:<6}{cont:>12}{stat:>9}{stat - cont:>+8}")
+    print("finish time and latency per request")
+    print(f"  {'id':<6}{'arrive':>8}{'cont@':>8}{'static@':>9}"
+          f"{'cont lat':>10}{'static lat':>12}")
+    for req_id, _, _, arrival in WORKLOAD:
+        cont = results["continuous"]["finish_time"][req_id]
+        stat = results["static"]["finish_time"][req_id]
+        print(f"  {req_id:<6}{arrival:>8}{cont:>8}{stat:>9}"
+              f"{cont - arrival:>10}{stat - arrival:>12}")
     print()
 
-    # Same correctness check as the demo: the policy must not change results.
+    # Same correctness check as the demo: policy must not change what work was
+    # done, only when it happened.
     for name, r in results.items():
         sched = r["scheduler"]
         assert not sched.waiting and not sched.running, name
@@ -125,9 +135,9 @@ def main():
 
     print()
     wasted = results["static"]["wasted_slot_steps"]
-    extra = results["static"]["total_steps"] - results["continuous"]["total_steps"]
-    print(f"static batching cost {extra} extra steps and wasted {wasted} slot-steps "
-          f"that continuous batching put to work.")
+    extra = results["static"]["makespan"] - results["continuous"]["makespan"]
+    print(f"static batching finished {extra} time units later and wasted "
+          f"{wasted} slot-steps.")
 
 
 if __name__ == "__main__":

@@ -20,9 +20,7 @@ class Scheduler:
     def free_slots(self):
         return self.max_running_requests - len(self.running)
 
-    def schedule(self):
-        # Static batching: hold the current batch until it is completely
-        # drained, even though finished requests have already freed slots.
+    def schedule(self, now):
         if self.static and self.running:
             return
 
@@ -30,7 +28,11 @@ class Scheduler:
             if not self.waiting:
                 break
 
-            request = self.waiting.popleft()
+            request = self.waiting[0]
+            if request.arrival_time > now:
+                break
+
+            self.waiting.popleft()
             request.status = "prefilling"
             self.running.append(request)
 
