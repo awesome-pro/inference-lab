@@ -19,7 +19,7 @@ def generate_sampled(
             new_logits = last_logits.float() / temperature
 
             # top-k
-            if top_k is not None and top_k <= 0:
+            if top_k is not None and top_k > 0:
                 top_k = min(top_k, new_logits.shape[-1])
                 top_k_values, top_k_indices = torch.topk(new_logits, top_k, dim=-1)
                 top_k_mask = torch.full_like(new_logits, float('-inf'))

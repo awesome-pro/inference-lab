@@ -3,8 +3,9 @@ from engine.request import Request
 
 
 class Scheduler:
-    def __init__(self, max_running_requests):
+    def __init__(self, max_running_requests, static=False):
         self.max_running_requests: int = max_running_requests
+        self.static: bool = static
         self.waiting: deque[Request] = deque()
         self.running: list[Request] = []
         self.finished: list[Request] = []
@@ -20,11 +21,12 @@ class Scheduler:
         return self.max_running_requests - len(self.running)
 
     def schedule(self):
-        available_slots = self.max_running_requests - len(self.running)
-        if available_slots <= 0:
+        # Static batching: hold the current batch until it is completely
+        # drained, even though finished requests have already freed slots.
+        if self.static and self.running:
             return
 
-        for _ in range(available_slots):
+        for _ in range(self.free_slots()):
             if not self.waiting:
                 break
 
