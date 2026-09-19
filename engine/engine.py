@@ -15,6 +15,7 @@ class Engine:
             "waiting": [r.id for r in self.scheduler.waiting],
             "running": [r.id for r in self.scheduler.running],
             "finished": [r.id for r in self.scheduler.finished],
+            "tokens": self.scheduler.batch_token_cost(),
         }
 
     def step(self):

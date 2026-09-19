@@ -21,7 +21,8 @@ REQUEST_SPECS = [
     ("r5", 7, 3, 6.0),
 ]
 
-MAX_RUNNING = 2
+MAX_RUNNING = 3
+MAX_BATCH_TOKENS = 12   # per-step token budget: prefill costs prompt len, decode costs 1
 STATIC = False   # True = hold each batch until it fully drains, no refilling
 TRACE = False    # True = also print the verbose per-step queue dump
 
@@ -46,7 +47,7 @@ def show_queues(scheduler):
     print("  finished:", [r.id for r in scheduler.finished] or "-")
 
 
-def render_timeline(history, arrivals, max_running):
+def render_timeline(history, arrivals, max_running, max_batch_tokens):
     """Draw one column per step, one row per queue slot."""
     if not history:
         return
@@ -80,6 +81,7 @@ def render_timeline(history, arrivals, max_running):
     print("  waiting  arrived, queued, no free slot yet")
     print("  running  holding a slot; a blank row is a free slot")
     print("  finished completed requests, oldest first; they stay here once done")
+    print(f"  tokens   batch tokens used per step (budget {max_batch_tokens})")
     print()
     print(f"{'t':<{LABEL_WIDTH}}{cells(str(t) for t in times)}")
 
@@ -91,6 +93,8 @@ def render_timeline(history, arrivals, max_running):
 
     print("-" * LABEL_WIDTH + "-" * (cell * len(history)))
 
+    print(f"{'tokens':<{LABEL_WIDTH}}"
+          f"{cells(str(step['tokens']) for step in history)}")
     band("running", running, max_running)
 
     print("-" * LABEL_WIDTH + "-" * (cell * len(history)))
@@ -101,7 +105,11 @@ def render_timeline(history, arrivals, max_running):
 
 
 def main():
-    scheduler = Scheduler(max_running_requests=MAX_RUNNING, static=STATIC)
+    scheduler = Scheduler(
+        max_running_requests=MAX_RUNNING,
+        max_batch_tokens=MAX_BATCH_TOKENS,
+        static=STATIC,
+    )
     engine = Engine(scheduler, Runner())
 
     requests = make_requests()
@@ -109,8 +117,12 @@ def main():
         engine.submit(request)
 
     print(f"policy = {'static' if STATIC else 'continuous'}")
-    print(f"max_running_requests = {MAX_RUNNING}")
-    print(f"submitted {len(scheduler.waiting)} requests\n")
+    print(f"max_running_requests = {MAX_RUNNING}, "
+          f"max_batch_tokens = {MAX_BATCH_TOKENS}")
+    for req_id, prompt_len, max_new_tokens, arrival_time in REQUEST_SPECS:
+        print(f"  {req_id}  prompt={prompt_len:<3} max_new_tokens={max_new_tokens:<3} "
+              f"arrives at t={arrival_time}")
+    print()
 
     admit_time = {}         # when the request left the waiting queue
     first_token_time = {}   # when its first generated token came out
@@ -140,7 +152,7 @@ def main():
     engine.history.append(engine.snapshot())
 
     arrivals = {req_id: arrival for req_id, _, _, arrival in REQUEST_SPECS}
-    render_timeline(engine.history, arrivals, MAX_RUNNING)
+    render_timeline(engine.history, arrivals, MAX_RUNNING, MAX_BATCH_TOKENS)
 
     print("=== timing per request ===")
     print("  queue  arrival -> admitted (sat in the waiting queue)")
@@ -171,7 +183,13 @@ def main():
     for req in scheduler.finished:
         assert len(req.generated_tokens) == req.max_new_tokens, req
         assert req.status == "finished", req
-    print("checks passed: all requests finished with the right token count")
+
+    # ...and no step may have overrun the token budget or the slot count.
+    for step in engine.history:
+        assert step["tokens"] <= MAX_BATCH_TOKENS, step
+        assert len(step["running"]) <= MAX_RUNNING, step
+    print("checks passed: all requests finished with the right token count, "
+          "and no step exceeded the slot or token budget")
 
 
 if __name__ == "__main__":

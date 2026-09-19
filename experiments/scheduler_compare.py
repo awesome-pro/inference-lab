@@ -28,11 +28,19 @@ WORKLOAD = [
 ]
 
 MAX_RUNNING = 3
+# Deliberately generous: these prompts are all 4 tokens, so the token cap never
+# binds and this script stays a pure static-vs-continuous comparison. The token
+# budget is exercised in scheduler_demo.py.
+MAX_BATCH_TOKENS = 64
 
 
-def simulate(static, workload, max_running):
+def simulate(static, workload, max_running, max_batch_tokens):
     """Run one policy to completion and return its metrics."""
-    scheduler = Scheduler(max_running_requests=max_running, static=static)
+    scheduler = Scheduler(
+        max_running_requests=max_running,
+        max_batch_tokens=max_batch_tokens,
+        static=static,
+    )
     engine = Engine(scheduler, Runner())
 
     for req_id, prompt_len, max_new, arrival in workload:
@@ -88,8 +96,8 @@ def occupancy_line(occupancy, max_running):
 
 def main():
     results = {
-        "continuous": simulate(False, WORKLOAD, MAX_RUNNING),
-        "static": simulate(True, WORKLOAD, MAX_RUNNING),
+        "continuous": simulate(False, WORKLOAD, MAX_RUNNING, MAX_BATCH_TOKENS),
+        "static": simulate(True, WORKLOAD, MAX_RUNNING, MAX_BATCH_TOKENS),
     }
 
     print(f"workload: {len(WORKLOAD)} requests, max_running = {MAX_RUNNING}")
